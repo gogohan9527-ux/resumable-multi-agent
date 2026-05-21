@@ -31,15 +31,17 @@ The default templates show two lanes, but the workflow scales to N lanes. Duplic
 
 ## The Five Documents
 
-All five live under `docs/` in the project root. The plan file lives in the user's plan directory if invoked from plan mode.
+All five live under `docs/` in the project root during active development. The plan file lives in the user's plan directory if invoked from plan mode. After Phase C completes, the four core documents are archived to `docs/archive/<module-name>/`.
 
-| File | Purpose | Owner | When written |
-|------|---------|-------|--------------|
-| `plans/<slug>.md` | Implementation plan, drafted in plan mode | Orchestrator | Phase 0 |
-| `docs/prd.md` | What the system must do: requirements and acceptance criteria | Orchestrator | Phase A |
-| `docs/explanation.md` | Engineering rules, lane ownership, run instructions | Orchestrator | Phase A |
-| `docs/todolist.md` | Resume-safe checklist, split by lane; accumulates one dated section per run | Orchestrator initially and during Phase C append; each subagent ticks its own rows | Phase A initial; Phase B updates; Phase C append on follow-up runs |
-| `docs/<contract>.md` | Inter-lane contract, such as `interface.md` or `schema.md`; accumulates with deprecation/version markers across runs | Upstream lane subagent drafts; orchestrator merges in Phase C | Phase B at upstream-lane midpoint; Phase C merges drafts into persistent file |
+| File | Purpose | Owner | When written | Lifecycle |
+|------|---------|-------|--------------|-----------|
+| `plans/<slug>.md` | Implementation plan, drafted in plan mode | Orchestrator | Phase 0 | Persistent in `plans/` |
+| `docs/prd.md` | What the system must do: requirements and acceptance criteria | Orchestrator | Phase A | Archived after Phase C |
+| `docs/explanation.md` | Engineering rules, lane ownership, run instructions | Orchestrator | Phase A | Archived after Phase C |
+| `docs/todolist.md` | Resume-safe checklist, split by lane; accumulates one dated section per run | Orchestrator initially and during Phase C append; each subagent ticks its own rows | Phase A initial; Phase B updates; Phase C append on follow-up runs | Archived after Phase C |
+| `docs/<contract>.md` | Inter-lane contract, such as `interface.md` or `schema.md`; accumulates with deprecation/version markers across runs | Upstream lane subagent drafts; orchestrator merges in Phase C | Phase B at upstream-lane midpoint; Phase C merges drafts into persistent file | Archived after Phase C |
+| `docs/archive/<module>/` | Completed module archive containing the four core documents | Orchestrator | Phase C Step 6 | Permanent reference |
+| `docs/archive/INDEX.md` | Archive catalog listing all completed modules | Orchestrator | Phase C Step 6 | Append-only |
 
 The orchestrator never writes the contract during Phase B. The upstream subagent produces it. The orchestrator's only role on the contract is during Phase C, deterministically merging this run's draft into the persistent file with conflict handling. Downstream lanes always read the persistent file as a hard contract.
 
@@ -47,15 +49,16 @@ The orchestrator never writes the contract during Phase B. The upstream subagent
 
 ## Three-Phase Execution Model
 
-The workflow has three phases. Phase A is synchronous: orchestrator plus user. Phase B is parallel subagent execution. Phase C is a deterministic orchestrator-only merge and cleanup phase that turns this run's outputs into persistent project state and removes transient files.
+The workflow has three phases. Phase A is synchronous: orchestrator plus user. Phase B is parallel subagent execution. Phase C is a deterministic orchestrator-only merge and cleanup phase that turns this run's outputs into persistent project state, removes transient files, and archives completed modules.
 
 ### Phase A - Synchronous Documentation (Orchestrator Only)
 
-1. Read or draft a plan. If invoked from plan mode, use the plan file.
-2. Write `docs/prd.md` from the plan and user dialogue.
-3. Write `docs/explanation.md`, declaring lane ownership, naming conventions, run commands, and testing expectations.
-4. Write `docs/todolist.md` with two top-level sections, one per lane, each a checklist. Add a Phase A section above with `[x]` rows showing the docs are done and a final `[ ]` row for "user issues resume command".
-5. **Halt.** Reply to the user summarizing the docs and ask for a resume command. Do not launch subagents yet.
+1. **Check for archived modules.** If the current task involves a previously completed module, read the relevant files from `docs/archive/<module-name>/`: `prd.md`, `explanation.md`, `todolist.md`, and the contract file. Use them to understand context and avoid duplicated work. If the relevant module is unclear, list available archived modules to the user.
+2. Read or draft a plan. If invoked from plan mode, use the plan file.
+3. Write `docs/prd.md` from the plan and user dialogue.
+4. Write `docs/explanation.md`, declaring lane ownership, naming conventions, run commands, and testing expectations.
+5. Write `docs/todolist.md` with two top-level sections, one per lane, each a checklist. Add a Phase A section above with `[x]` rows showing the docs are done and a final `[ ]` row for "user issues resume command".
+6. **Halt.** Reply to the user summarizing the docs and ask for a resume command. Do not launch subagents yet.
 
 This phase is synchronous because the user must agree to scope, rules, and lane decomposition before parallel work begins.
 
@@ -129,13 +132,13 @@ The 500-byte threshold filters out a partially-written stub. Adjust per project:
 
 **Cap the wait** with a max-iterations bound so a stalled upstream does not hang the orchestrator forever. If the gate does not open within a chosen limit, such as 20 minutes, surface it to the user and decide whether to wait, stop, or fall back to sequential execution.
 
-### Phase C - Merge and Cleanup (Orchestrator Only)
+### Phase C - Merge, Cleanup, and Archive (Orchestrator Only)
 
-After both lane signatures are present in `docs/todolist.md`, run Phase C. This phase is deterministic: the orchestrator reads, edits, and deletes; no subagent is involved. It turns this run's per-run artifacts into persistent project state and removes transient scratch files.
+After both lane signatures are present in `docs/todolist.md`, run Phase C. This phase is deterministic: the orchestrator reads, edits, deletes, and archives; no subagent is involved. It turns this run's per-run artifacts into persistent project state, removes transient scratch files, and archives completed modules.
 
 Phase C handles two cases with one set of rules:
 
-- **First run:** the project has no prior `docs/<contract>.md`; most steps are no-ops and only cleanup matters.
+- **First run:** the project has no prior `docs/<contract>.md`; most steps are no-ops and only cleanup and archive matter.
 - **Follow-up run:** the project already has `docs/<contract>.md` and prior todolist sections; merge logic applies.
 
 **Convention for per-run scratch:** when the orchestrator launches a follow-up run, it directs each lane to write contract additions to `docs/<contract>.draft.md` instead of editing the persistent file directly. The orchestrator may also stage explanation addenda to `docs/explanation.draft.md` during Phase A. This keeps Phase B agents focused on new content while Phase C handles integration. On the first run, lanes write directly to the persistent path and `.draft.md` files do not appear.
@@ -207,9 +210,9 @@ Delete:
 - Any `docs/*.draft.md` files merged in Steps 1 and 2.
 - Any `docs/.runs/<slug>/` scratch directory if you used the `.runs/` pattern instead of `*.draft.md`.
 
-Keep:
+Keep temporarily, until Step 6 archive:
 
-- `docs/prd.md`, `docs/explanation.md`, `docs/<contract>.md`, and `docs/todolist.md`. These are the persistent project state.
+- `docs/prd.md`, `docs/explanation.md`, `docs/<contract>.md`, and `docs/todolist.md`. These will be archived in Step 6.
 
 #### Step 5 - Final Verification
 
@@ -217,6 +220,44 @@ Keep:
 - No `*.draft.md` or `_*.md` files remain in `docs/`.
 - Smoke verification, such as build or tests listed in `docs/explanation.md` section 7, is green.
 - Summarize to the user and surface any gaps the lanes reported in their final replies.
+
+#### Step 6 - Archive Completed Module
+
+After verification passes, archive the completed module to preserve project history and free the main `docs/` directory for the next module:
+
+1. **Determine the module name.** Extract it from the PRD title, todolist run slug, or user input. Use kebab-case, such as `user-auth` or `image-generation`. If the module is large or covers multiple features, use `module-feature` form, such as `user-auth-oauth` or `user-auth-session`.
+
+2. **Create the archive directory.** Create `docs/archive/<module-name>/` if it does not exist.
+
+3. **Move the four core documents:**
+
+   ```bash
+   mv docs/prd.md docs/archive/<module-name>/prd.md
+   mv docs/explanation.md docs/archive/<module-name>/explanation.md
+   mv docs/todolist.md docs/archive/<module-name>/todolist.md
+   mv docs/<contract>.md docs/archive/<module-name>/<contract>.md
+   ```
+
+   If multiple contract files exist, such as `interface.md` and `schema.md`, move all of them.
+
+4. **Verify archive integrity.** Confirm all four document types exist in the archive directory and the main `docs/` directory is clean, with only the `archive/` subdirectory remaining.
+
+5. **Update the archive index.** Create or append to `docs/archive/INDEX.md`:
+
+   ```markdown
+   ## <module-name>
+   - **Completed:** <YYYY-MM-DD>
+   - **Description:** <one-line summary from PRD>
+   - **Files:** [prd.md](/<module-name>/prd.md), [explanation.md](/<module-name>/explanation.md), [todolist.md](/<module-name>/todolist.md), [<contract>.md](/<module-name>/<contract>.md)
+   ```
+
+6. **Report to the user.** Confirm the module was archived and the workspace is ready for the next module.
+
+**Module size guidelines:**
+
+- If a module's todolist exceeds 40 rows across all lanes, consider splitting it into smaller `module-feature` submodules during Phase A planning.
+- If a module's contract file exceeds 1000 lines, split it by feature domain, such as `user-auth-api.md` plus `user-auth-webhooks.md`.
+- Archive structure supports nested modules. For example, `docs/archive/user-auth/oauth/` is valid if `user-auth` is the parent module.
 
 ## Lane Ownership Rules
 
